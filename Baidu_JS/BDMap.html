@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <title>地图显示</title>
+    <style>
+        /* 【修改】设置地图容器占满整个窗口，适应C++中的布局变化 */
+        html, body, #container {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+    <script src="qrc:/map/qwebchannel.js"></script>
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&&type=webgl&ak=vd15knkgsXClojiWvZt3UiqqT4yguxAh"></script>
+</head>
+<body>
+    <div id="container"></div>
+    <script>
+
+    /********************** 全局变量 ****************************/
+    var map = new BMapGL.Map("container");
+    var convertor = new BMapGL.Convertor(); // 坐标转换器
+    var markerBase = null;   // 岸基标记
+    var markerTarget = null; // 信标标记
+
+    /********************** 地图初始化 **************************/
+    // 默认坐标（三亚），层级16
+    var point = new BMapGL.Point(109.541, 18.319);
+    map.centerAndZoom(point, 16);
+    map.enableScrollWheelZoom(true);
+    map.setHeading(0);
+    map.setTilt(0);
+    
+    // 添加比例尺和缩放控件
+    map.addControl(new BMapGL.ScaleControl());
+    map.addControl(new BMapGL.ZoomControl());
+
+    /********************** QT 交互注册 *************************/
+    new QWebChannel(qt.webChannelTransport, function(channel) {
+        window.bridgeObject = channel.objects.webBridge;
+    });
+
+    /********************** 核心功能函数 ************************/
+
+    // 1. 设置【岸基】位置 (显示红色标签)
+    // 供 C++ UpdateMapPosition 调用
+    function setBasePoint(lng, lat) {
+        var pt = new BMapGL.Point(lng, lat);
+        
+        // 坐标转换: GPS(WGS84) -> 百度坐标(BD09)
+        // translate(points, from, to, callback)
+        // 1 = GPS设备获取的角度坐标; 5 = 百度地图采用的经纬度坐标
+        convertor.translate([pt], 1, 5, function (data) {
+            if(data.status === 0) {
+                var p = data.points[0];
+                
+                // 如果标记已存在，只需更新位置，避免闪烁
+                if(markerBase) {
+                    markerBase.setPosition(p);
+                } else {
+                    // 创建新标记
+                    markerBase = new BMapGL.Marker(p);
+                    map.addOverlay(markerBase);
+                    
+                    // 添加 "岸基" 标签
+                    var label = new BMapGL.Label("岸基(我)", { offset: new BMapGL.Size(15, -25) });
+                    label.setStyle({ 
+                        color: "red", 
+                        fontSize: "14px", 
+                        fontWeight: "bold", 
+                        border: "1px solid red",
+                        padding: "2px",
+                        backgroundColor: "white"
+                    });
+                    markerBase.setLabel(label);
+                    
+                    // 第一次定位时，移动视野到岸基
+                    map.panTo(p); 
+                }
+            }
+        });
+    }
+
+    // 2. 设置【信标】位置 (显示蓝色标签)
+    // 供 C++ UpdateTargetMapPosition 调用
+    function setTargetPoint(lng, lat) {
+        var pt = new BMapGL.Point(lng, lat);
+        convertor.translate([pt], 1, 5, function (data) {
+            if(data.status === 0) {
+                var p = data.points[0];
+                
+                if(markerTarget) {
+                    markerTarget.setPosition(p);
+                } else {
+                    markerTarget = new BMapGL.Marker(p);
+                    map.addOverlay(markerTarget);
+                    
+                    // 添加 "信标" 标签
+                    var label = new BMapGL.Label("远程信标", { offset: new BMapGL.Size(15, -25) });
+                    label.setStyle({ 
+                        color: "blue", 
+                        fontSize: "14px", 
+                        fontWeight: "bold", 
+                        border: "1px solid blue",
+                        padding: "2px",
+                        backgroundColor: "white"
+                    });
+                    markerTarget.setLabel(label);
+                }
+            }
+        });
+    }
+
+    // 3. 兼容旧接口 (默认设为岸基)
+    function setPoint(lng, lat) {
+        setBasePoint(lng, lat);
+    }
+
+    </script>
+</body>
+</html>
