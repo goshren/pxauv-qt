@@ -9,8 +9,8 @@ const double EARTH_RADIUS = 6378137.0;
 UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
 {
     this->setWindowTitle("USBL水声遥控 & 岸基定位系统");
-    // 调整窗口高度以容纳所有信息
-    this->setFixedSize(1050, 780); 
+    // 【修改】调整窗口高度以容纳释放器控制区域 (780 -> 860)
+    this->setFixedSize(1050, 860); 
 
     UsblSerial = new QSerialPort(this);
     GpsSerial = new QSerialPort(this);
@@ -21,6 +21,10 @@ UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
     m_hasGpsFix = false;
     
     InitUi();
+
+    // [修改 1] 初始化定时器并连接信号槽
+    m_queryTimer = new QTimer(this);
+    connect(m_queryTimer, &QTimer::timeout, this, &UsblControlWindow::Slot_OnQueryTimerTimeout);
 
     // 自动扫描并填充串口列表
     QList<QSerialPortInfo> serials = QSerialPortInfo::availablePorts();
@@ -60,6 +64,12 @@ UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
     
     // 连接查询定位按钮
     connect(Btn_QueryLoc, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_QueryLoc_Clicked);
+
+    // 【新增】连接释放器控制按钮
+    connect(Btn_Rel1_Open, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel1_Open_Clicked);
+    connect(Btn_Rel1_Close, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel1_Close_Clicked);
+    connect(Btn_Rel2_Open, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel2_Open_Clicked);
+    connect(Btn_Rel2_Close, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel2_Close_Clicked);
 }
 
 UsblControlWindow::~UsblControlWindow()
@@ -72,7 +82,7 @@ void UsblControlWindow::InitUi()
 {
     // === 左侧面板：控制与配置 ===
     GroupBox_LeftPanel = new QGroupBox(this);
-    GroupBox_LeftPanel->setGeometry(5, 5, 440, 770); 
+    GroupBox_LeftPanel->setGeometry(5, 5, 440, 850); 
     GroupBox_LeftPanel->setTitle(""); 
     GroupBox_LeftPanel->setStyleSheet("QGroupBox{border:none;}"); 
 
@@ -108,47 +118,25 @@ void UsblControlWindow::InitUi()
     LineEdit_GpsLon = new QLineEdit(GroupBox_GpsInfo); LineEdit_GpsLon->setGeometry(260, 25, 140, 25); LineEdit_GpsLon->setReadOnly(true);
     Label_GpsTime = new QLabel("UTC时间: --:--:--", GroupBox_GpsInfo); Label_GpsTime->setGeometry(20, 55, 300, 25); Label_GpsTime->setStyleSheet("color: gray;");
 
-    // 4. USBL 定位信息 (相对 + 绝对)
+    // 4. USBL 定位信息
     GroupBox_UsblPos = new QGroupBox("4. 水下信标定位信息", GroupBox_LeftPanel);
     GroupBox_UsblPos->setGeometry(5, 265, 430, 140);
 
-    // 第一行：相对坐标
-    QLabel *lblRel = new QLabel("相对坐标(米):", GroupBox_UsblPos);
-    lblRel->setGeometry(10, 30, 90, 25);
-    lblRel->setStyleSheet("font-weight: bold; color: #333;");
-
+    QLabel *lblRel = new QLabel("相对坐标(米):", GroupBox_UsblPos); lblRel->setGeometry(10, 30, 90, 25); lblRel->setStyleSheet("font-weight: bold; color: #333;");
     QLabel *lblX = new QLabel("X:", GroupBox_UsblPos); lblX->setGeometry(100, 30, 15, 25);
-    LineEdit_UsblX = new QLineEdit("0.0", GroupBox_UsblPos); LineEdit_UsblX->setGeometry(120, 30, 60, 25);
-    LineEdit_UsblX->setReadOnly(true); LineEdit_UsblX->setAlignment(Qt::AlignCenter);
-
+    LineEdit_UsblX = new QLineEdit("0.0", GroupBox_UsblPos); LineEdit_UsblX->setGeometry(120, 30, 60, 25); LineEdit_UsblX->setReadOnly(true); LineEdit_UsblX->setAlignment(Qt::AlignCenter);
     QLabel *lblY = new QLabel("Y:", GroupBox_UsblPos); lblY->setGeometry(190, 30, 15, 25);
-    LineEdit_UsblY = new QLineEdit("0.0", GroupBox_UsblPos); LineEdit_UsblY->setGeometry(210, 30, 60, 25);
-    LineEdit_UsblY->setReadOnly(true); LineEdit_UsblY->setAlignment(Qt::AlignCenter);
-
+    LineEdit_UsblY = new QLineEdit("0.0", GroupBox_UsblPos); LineEdit_UsblY->setGeometry(210, 30, 60, 25); LineEdit_UsblY->setReadOnly(true); LineEdit_UsblY->setAlignment(Qt::AlignCenter);
     QLabel *lblZ = new QLabel("Z:", GroupBox_UsblPos); lblZ->setGeometry(280, 30, 15, 25);
-    LineEdit_UsblZ = new QLineEdit("0.0", GroupBox_UsblPos); LineEdit_UsblZ->setGeometry(300, 30, 60, 25);
-    LineEdit_UsblZ->setReadOnly(true); LineEdit_UsblZ->setAlignment(Qt::AlignCenter);
+    LineEdit_UsblZ = new QLineEdit("0.0", GroupBox_UsblPos); LineEdit_UsblZ->setGeometry(300, 30, 60, 25); LineEdit_UsblZ->setReadOnly(true); LineEdit_UsblZ->setAlignment(Qt::AlignCenter);
 
-    // 第二行：绝对经纬度 (计算得出)
-    QLabel *lblAbs = new QLabel("信标经纬度:", GroupBox_UsblPos);
-    lblAbs->setGeometry(10, 70, 90, 25);
-    lblAbs->setStyleSheet("font-weight: bold; color: darkblue;");
-
+    QLabel *lblAbs = new QLabel("信标经纬度:", GroupBox_UsblPos); lblAbs->setGeometry(10, 70, 90, 25); lblAbs->setStyleSheet("font-weight: bold; color: darkblue;");
     QLabel *lblTLat = new QLabel("纬度:", GroupBox_UsblPos); lblTLat->setGeometry(100, 70, 40, 25);
-    LineEdit_TargetLat = new QLineEdit("-", GroupBox_UsblPos); 
-    LineEdit_TargetLat->setGeometry(140, 70, 90, 25);
-    LineEdit_TargetLat->setReadOnly(true);
-    LineEdit_TargetLat->setStyleSheet("color: blue; font-weight: bold;");
-
+    LineEdit_TargetLat = new QLineEdit("-", GroupBox_UsblPos); LineEdit_TargetLat->setGeometry(140, 70, 90, 25); LineEdit_TargetLat->setReadOnly(true); LineEdit_TargetLat->setStyleSheet("color: blue; font-weight: bold;");
     QLabel *lblTLon = new QLabel("经度:", GroupBox_UsblPos); lblTLon->setGeometry(240, 70, 40, 25);
-    LineEdit_TargetLon = new QLineEdit("-", GroupBox_UsblPos); 
-    LineEdit_TargetLon->setGeometry(280, 70, 90, 25);
-    LineEdit_TargetLon->setReadOnly(true);
-    LineEdit_TargetLon->setStyleSheet("color: blue; font-weight: bold;");
+    LineEdit_TargetLon = new QLineEdit("-", GroupBox_UsblPos); LineEdit_TargetLon->setGeometry(280, 70, 90, 25); LineEdit_TargetLon->setReadOnly(true); LineEdit_TargetLon->setStyleSheet("color: blue; font-weight: bold;");
     
-    Label_UsblStatus = new QLabel("等待数据...", GroupBox_UsblPos);
-    Label_UsblStatus->setGeometry(20, 110, 350, 20);
-    Label_UsblStatus->setStyleSheet("color: gray; font-size: 10px;");
+    Label_UsblStatus = new QLabel("等待数据...", GroupBox_UsblPos); Label_UsblStatus->setGeometry(20, 110, 350, 20); Label_UsblStatus->setStyleSheet("color: gray; font-size: 10px;");
 
     // 5. 运动控制
     GroupBox_Control = new QGroupBox("5. 水声遥控指令", GroupBox_LeftPanel);
@@ -156,8 +144,7 @@ void UsblControlWindow::InitUi()
     GroupBox_Control->setEnabled(false); 
 
     int cx = 215; // Center X
-    int startY = 30; 
-    int btnW = 90; int btnH = 35; int gap = 40;
+    int startY = 30; int btnW = 90; int btnH = 35; int gap = 40;
 
     Btn_Forward = new QPushButton("前进 (FD)", GroupBox_Control); Btn_Forward->setGeometry(cx - btnW/2, startY, btnW, btnH);
     Btn_Left = new QPushButton("左转 (LT)", GroupBox_Control); Btn_Left->setGeometry(cx - btnW/2 - 110, startY + gap*2, btnW, btnH);
@@ -172,17 +159,34 @@ void UsblControlWindow::InitUi()
     SpinBox_Speed = new QSpinBox(GroupBox_Control); SpinBox_Speed->setGeometry(cx + 30, startY + gap*3, 50, 25);
     SpinBox_Speed->setRange(1, 5); SpinBox_Speed->setValue(1); SpinBox_Speed->setAlignment(Qt::AlignCenter);
     
-    // 查询水下定位按钮
     Btn_QueryLoc = new QPushButton("查询水下定位 (Ping)", GroupBox_Control);
     Btn_QueryLoc->setGeometry(cx - 75, startY + gap*5 + 5, 150, 40); 
     Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
 
+    // ================== 【新增】 6. 释放器控制 ==================
+    GroupBox_Releaser = new QGroupBox("6. 释放器控制 (USBL)", GroupBox_LeftPanel);
+    GroupBox_Releaser->setGeometry(5, 715, 430, 80);
+    // GroupBox_Releaser->setEnabled(false); // 默认禁用，等串口打开
+
+    Btn_Rel1_Open = new QPushButton("开启释放1", GroupBox_Releaser);
+    Btn_Rel1_Open->setGeometry(20, 30, 85, 35);
+    
+    Btn_Rel1_Close = new QPushButton("关闭释放1", GroupBox_Releaser);
+    Btn_Rel1_Close->setGeometry(115, 30, 85, 35);
+
+    Btn_Rel2_Open = new QPushButton("开启释放2", GroupBox_Releaser);
+    Btn_Rel2_Open->setGeometry(230, 30, 85, 35);
+
+    Btn_Rel2_Close = new QPushButton("关闭释放2", GroupBox_Releaser);
+    Btn_Rel2_Close->setGeometry(325, 30, 85, 35);
+
+
     // === 右侧面板：地图显示 ===
     GroupBox_Map = new QGroupBox("岸基位置实时显示", this);
-    GroupBox_Map->setGeometry(450, 10, 590, 760);
+    GroupBox_Map->setGeometry(450, 10, 590, 840); // 调整地图高度
     
     MapView = new QWebEngineView(GroupBox_Map);
-    MapView->setGeometry(10, 25, 570, 725);
+    MapView->setGeometry(10, 25, 570, 805);
 
     QWebChannel *channel = new QWebChannel(this);
     JSBridge = new bridge(this); 
@@ -191,7 +195,58 @@ void UsblControlWindow::InitUi()
     MapView->page()->load(QUrl("qrc:/map/BDMap.html")); 
 }
 
-// ================== USBL 读取与解析核心逻辑 ==================
+// ================== 【新增】释放器控制逻辑 ==================
+
+void UsblControlWindow::Slot_Btn_Rel1_Open_Clicked()
+{
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+    // 发送开启释放器1指令 (含换行)
+    QString cmd = "#60010407406f70656e3140BEC3\r\n";
+    UsblSerial->write(cmd.toUtf8());
+    qDebug() << "USBL TX: Release 1 OPEN";
+}
+
+void UsblControlWindow::Slot_Btn_Rel1_Close_Clicked()
+{
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+    // 发送关闭释放器1指令
+    QString cmd = "#6001040740636c6f736531407731\r\n";
+    UsblSerial->write(cmd.toUtf8());
+    qDebug() << "USBL TX: Release 1 CLOSE";
+}
+
+void UsblControlWindow::Slot_Btn_Rel2_Open_Clicked()
+{
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+    // 发送开启释放器2指令
+    QString cmd = "#60010407406f70656e3240BE33\r\n";
+    UsblSerial->write(cmd.toUtf8());
+    qDebug() << "USBL TX: Release 2 OPEN";
+}
+
+void UsblControlWindow::Slot_Btn_Rel2_Close_Clicked()
+{
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+    // 发送关闭释放器2指令
+    QString cmd = "#6001040740636c6f7365324077C1\r\n";
+    UsblSerial->write(cmd.toUtf8());
+    qDebug() << "USBL TX: Release 2 CLOSE";
+}
+
+
+// ================== USBL 读取与解析核心逻辑 (保持不变) ==================
 
 void UsblControlWindow::Slot_UsblReadData()
 {
@@ -304,19 +359,14 @@ void UsblControlWindow::ParseSeatracData(const QString &hexString)
     }
 }
 
-// 【修正】根据相对位移计算目标经纬度
+// 根据相对位移计算目标经纬度
 void UsblControlWindow::CalculateTargetGeoPos(float x_offset, float y_offset)
 {
-    // 简单平面近似计算 (短距离适用)
-    
     // 1. 计算纬度变化 (dLat)
-    // 纬度每度长度 ≈ 111319.9米 (地球周长/360)
-    // 或者用公式: dLat(弧度) = y / R
     double dLat = (y_offset / EARTH_RADIUS) * (180.0 / M_PI);
     double targetLat = m_baseLatitude + dLat;
 
     // 2. 计算经度变化 (dLon)
-    // 经度每度长度随纬度变化 = 111319.9 * cos(lat)
     double radLat = m_baseLatitude * (M_PI / 180.0);
     double dLon = (x_offset / (EARTH_RADIUS * qCos(radLat))) * (180.0 / M_PI);
     double targetLon = m_baseLongitude + dLon;
@@ -422,6 +472,7 @@ void UsblControlWindow::Slot_Btn_OpenSerial_Clicked() {
         Btn_OpenSerial->setEnabled(false);
         Btn_CloseSerial->setEnabled(true);
         GroupBox_Control->setEnabled(true);
+        GroupBox_Releaser->setEnabled(true); // 启用释放器控制
         ComboBox_Port->setEnabled(false);
         ComboBox_Baud->setEnabled(false);
     } else {
@@ -430,10 +481,18 @@ void UsblControlWindow::Slot_Btn_OpenSerial_Clicked() {
 }
 
 void UsblControlWindow::Slot_Btn_CloseSerial_Clicked() {
+    // [修改] 关闭串口前，先停止定时器
+    if (m_queryTimer->isActive()) {
+        m_queryTimer->stop();
+        Btn_QueryLoc->setText("查询水下定位 (Ping)");
+        Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
+    }
+    
     if(UsblSerial->isOpen()) UsblSerial->close();
     Btn_OpenSerial->setEnabled(true);
     Btn_CloseSerial->setEnabled(false);
     GroupBox_Control->setEnabled(false);
+    GroupBox_Releaser->setEnabled(false); // 禁用释放器控制
     ComboBox_Port->setEnabled(true);
     ComboBox_Baud->setEnabled(true);
 }
@@ -463,14 +522,57 @@ void UsblControlWindow::Slot_Btn_CloseGps_Clicked() {
 }
 
 void UsblControlWindow::Slot_Btn_QueryLoc_Clicked() {
+    // 检查串口是否打开
     if(!UsblSerial->isOpen()) {
         QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        // 如果定时器正在运行（异常情况），强制停止
+        if(m_queryTimer->isActive()) {
+            m_queryTimer->stop();
+            Btn_QueryLoc->setText("查询水下定位 (Ping)");
+            Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
+        }
         return;
     }
+
+    // 判断当前状态：是“正在查询”还是“空闲”
+    if (m_queryTimer->isActive()) {
+        // --- 当前正在查询，执行【停止】逻辑 ---
+        m_queryTimer->stop();
+        
+        // 恢复按钮外观
+        Btn_QueryLoc->setText("查询水下定位 (Ping)");
+        Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
+    } else {
+        // --- 当前空闲，执行【开始】逻辑 ---
+        
+        // 立即执行一次查询，不用等2秒
+        Slot_OnQueryTimerTimeout();
+        
+        // 启动定时器，间隔 2000 毫秒 (2秒)
+        m_queryTimer->start(2000);
+        
+        // 修改按钮外观为“停止”样式
+        Btn_QueryLoc->setText("停止自动查询 (Stop)");
+        Btn_QueryLoc->setStyleSheet("color: red; font-weight: bold; border: 1px solid red; border-radius: 5px; background-color: #ffeeee;");
+    }
+}
+
+void UsblControlWindow::Slot_OnQueryTimerTimeout() {
+    // 双重检查串口状态，防止中途串口断开导致崩溃或错误
+    if(!UsblSerial->isOpen()) {
+        m_queryTimer->stop();
+        Btn_QueryLoc->setText("查询水下定位 (Ping)");
+        // 可以恢复原来的样式
+        Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
+        return;
+    }
+
     // 发送查询指令 #4001040187 + \r\n
     QString cmd = "#4001040187\r\n"; 
     UsblSerial->write(cmd.toUtf8());
-    qDebug() << "USBL TX (Query Loc):" << cmd.trimmed();
+    
+    // 这里可以打印日志，看是否在持续发送
+    qDebug() << "USBL Auto Query TX:" << cmd.trimmed() << " Time:" << QDateTime::currentDateTime().toString("HH:mm:ss");
 }
 
 void UsblControlWindow::SendUsblCommand(const QString &type, int gear) {

@@ -17,6 +17,7 @@
 #include <QWebEngineView>
 #include <QWebChannel>
 #include "bridge.h"
+#include <QTimer>
 
 class UsblControlWindow : public QWidget
 {
@@ -56,6 +57,10 @@ private:
     QLineEdit *LineEdit_UsblZ; // 深度 Z
     QLabel *Label_UsblStatus;  // 解析状态提示
 
+    // --- 【新增】目标绝对坐标显示控件 ---
+    QLineEdit *LineEdit_TargetLat; // 目标纬度
+    QLineEdit *LineEdit_TargetLon; // 目标经度
+
     // 5. 运动控制
     QGroupBox *GroupBox_Control;
     QPushButton *Btn_Up;
@@ -67,12 +72,14 @@ private:
     QPushButton *Btn_Stop;
     QSpinBox *SpinBox_Speed;
     QLabel *Label_Speed;
-
-    // --- 【新增】目标绝对坐标显示控件 ---
-    QLineEdit *LineEdit_TargetLat; // 目标纬度
-    QLineEdit *LineEdit_TargetLon; // 目标经度
-    
     QPushButton *Btn_QueryLoc; // 查询定位按钮
+
+    // 6. 【新增】释放器控制区域
+    QGroupBox *GroupBox_Releaser;
+    QPushButton *Btn_Rel1_Open;
+    QPushButton *Btn_Rel1_Close;
+    QPushButton *Btn_Rel2_Open;
+    QPushButton *Btn_Rel2_Close;
 
     // --- 右侧地图区域 ---
     QGroupBox *GroupBox_Map;
@@ -84,19 +91,20 @@ private:
     // --- 逻辑变量 ---
     QSerialPort *UsblSerial;
     QSerialPort *GpsSerial;
+    // [修改 2] 在 private 区域添加定时器指针
+    QTimer *m_queryTimer;
 
-    // --- 【新增】逻辑变量 ---
+    // --- 逻辑变量 ---
     double m_baseLatitude = 0.0;  // 岸基纬度 (十进制)
     double m_baseLongitude = 0.0; // 岸基经度 (十进制)
     bool m_hasGpsFix = false;     // 是否已获取有效GPS
     
-    // 【新增】USBL数据缓冲区
+    // USBL数据缓冲区
     QByteArray m_usblBuffer; 
 
     // --- 辅助函数 ---
     void InitUi();           
     void SendUsblCommand(const QString &type, int gear); 
-        // 在 private: 区域的辅助函数部分，增加一行：
     void UpdateTargetMapPosition(const QString &lon, const QString &lat);
     QString GetProtocolString(const QString &type, int gear);
     
@@ -105,7 +113,7 @@ private:
     double NmeaToDecimal(const QString &nmeaStr);
     void UpdateMapPosition(const QString &lon, const QString &lat);
 
-    // 【新增】计算目标经纬度函数
+    // 计算目标经纬度函数
     void CalculateTargetGeoPos(float x_offset, float y_offset);
 
     // USBL解析相关
@@ -117,13 +125,16 @@ private slots:
     void Slot_Btn_OpenSerial_Clicked();
     void Slot_Btn_CloseSerial_Clicked();
     
-    // 【修改】读取 USBL 数据槽函数
+    // 读取 USBL 数据槽函数
     void Slot_UsblReadData(); 
     
     // GPS 槽
     void Slot_Btn_OpenGps_Clicked();
     void Slot_Btn_CloseGps_Clicked();
     void Slot_GpsReadData(); 
+
+    // [修改 3] 添加定时器超时槽函数
+    void Slot_OnQueryTimerTimeout();
 
     // 运动控制槽
     void Slot_Btn_Up_Clicked();
@@ -133,8 +144,15 @@ private slots:
     void Slot_Btn_Forward_Clicked();
     void Slot_Btn_Backward_Clicked();
     void Slot_Btn_Stop_Clicked();
-    
     void Slot_Btn_QueryLoc_Clicked();
+    
+
+    // 【新增】释放器控制槽
+    void Slot_Btn_Rel1_Open_Clicked();
+    void Slot_Btn_Rel1_Close_Clicked();
+    void Slot_Btn_Rel2_Open_Clicked();
+    void Slot_Btn_Rel2_Close_Clicked();
+    
 };
 
 #endif // USBLCONTROLWINDOW_H
