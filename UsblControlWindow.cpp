@@ -8,8 +8,8 @@ const double EARTH_RADIUS = 6378137.0;
 
 UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
 {
-    this->setWindowTitle("USBL水声遥控 & 岸基定位系统");
-    this->setFixedSize(1050, 860); 
+    this->setWindowTitle("无缆水下机器人控制软件");
+    this->setFixedSize(1050, 900);
 
     UsblSerial = new QSerialPort(this);
     GpsSerial = new QSerialPort(this);
@@ -70,9 +70,10 @@ UsblControlWindow::~UsblControlWindow()
 void UsblControlWindow::InitUi()
 {
     GroupBox_LeftPanel = new QGroupBox(this);
-    GroupBox_LeftPanel->setGeometry(5, 5, 440, 850); 
+// [修改] 增加左侧面板高度 (850 -> 890)
+    GroupBox_LeftPanel->setGeometry(5, 5, 440, 890); 
     GroupBox_LeftPanel->setTitle(""); 
-    GroupBox_LeftPanel->setStyleSheet("QGroupBox{border:none;}"); 
+    GroupBox_LeftPanel->setStyleSheet("QGroupBox{border:none;}");
 
     GroupBox_Serial = new QGroupBox("1. USBL通信设置", GroupBox_LeftPanel);
     GroupBox_Serial->setGeometry(5, 0, 430, 80);
@@ -158,17 +159,43 @@ void UsblControlWindow::InitUi()
     Btn_Rel2_Close = new QPushButton("关闭释放2", GroupBox_Releaser);
     Btn_Rel2_Close->setGeometry(325, 30, 85, 35);
 
+// ================== [新增] 7. 目标航路点设置 ==================
+    GroupBox_Waypoint = new QGroupBox("7. 目标航路点下发 (导航)", GroupBox_LeftPanel);
+    GroupBox_Waypoint->setGeometry(5, 800, 430, 80); 
+
+    QLabel *lblGLat = new QLabel("目标纬度:", GroupBox_Waypoint);
+    lblGLat->setGeometry(10, 30, 60, 25);
+    LineEdit_GoalLat = new QLineEdit(GroupBox_Waypoint);
+    LineEdit_GoalLat->setGeometry(70, 30, 90, 25);
+    LineEdit_GoalLat->setPlaceholderText("18.xxxxxx");
+
+    QLabel *lblGLon = new QLabel("目标经度:", GroupBox_Waypoint);
+    lblGLon->setGeometry(170, 30, 60, 25);
+    LineEdit_GoalLon = new QLineEdit(GroupBox_Waypoint);
+    LineEdit_GoalLon->setGeometry(230, 30, 90, 25);
+    LineEdit_GoalLon->setPlaceholderText("109.xxxxxx");
+
+    Btn_SendGoal = new QPushButton("下发目标", GroupBox_Waypoint);
+    Btn_SendGoal->setGeometry(330, 28, 80, 30);
+    Btn_SendGoal->setStyleSheet("color: darkred; font-weight: bold;");
+
+    // 连接发送按钮信号
+    connect(Btn_SendGoal, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_SendGoal_Clicked);
+
+
+// === 右侧面板：地图显示 ===
     GroupBox_Map = new QGroupBox("岸基位置实时显示", this);
-    GroupBox_Map->setGeometry(450, 10, 590, 840); 
+    // [修改] 地图高度适配窗口
+    GroupBox_Map->setGeometry(450, 10, 590, 880); 
     
     MapView = new QWebEngineView(GroupBox_Map);
-    MapView->setGeometry(10, 25, 570, 805);
+    MapView->setGeometry(10, 25, 570, 845);
 
     QWebChannel *channel = new QWebChannel(this);
     JSBridge = new bridge(this); 
     channel->registerObject("webBridge", JSBridge);
     MapView->page()->setWebChannel(channel);
-    MapView->page()->load(QUrl("qrc:/map/BDMap.html")); 
+    MapView->page()->load(QUrl("qrc:/map/BDMap.html"));
 }
 
 void UsblControlWindow::Slot_Btn_Rel1_Open_Clicked()
@@ -300,7 +327,7 @@ void UsblControlWindow::CalculateTargetGeoPos(float x_offset, float y_offset)
 
     UpdateTargetMapPosition(QString::number(targetLon, 'f', 6), QString::number(targetLat, 'f', 6));
 
-    // 计算完成后，立即带校验下发
+    // 计算完成后，自动下发坐标 (使用 '/' 协议)
     SendTargetPosToAUV(targetLat, targetLon);
 }
 
@@ -510,8 +537,10 @@ void UsblControlWindow::SendTargetPosToAUV(double lat, double lon)
 {
     // 1. 构建明文载荷: "+18.123456+109.262626+" (22字节)
     QString strLat = QString::asprintf("%09.6f", lat);
-    QString strLon = QString::asprintf("%10.6f", lon);
-    QString payloadStr = "+" + strLat + "+" + strLon + "+";
+    QString strLon = QString::asprintf("%09.6f", lon);
+    
+    // 【关键修改点】这里将 "+" 替换为 "/"
+    QString payloadStr = "/" + strLat + "/" + strLon + "/";
 
     // 2. 构建二进制数据包 (CID, DID, Type, Len, Payload)
     QByteArray binaryPacket;
@@ -542,6 +571,64 @@ void UsblControlWindow::SendTargetPosToAUV(double lat, double lon)
         // 调试打印
         qDebug() << "[AutoSend] HexCmd:" << fullCommand.trimmed();
     }
+}
+
+// [新增] 目标点下发槽函数 (使用 '+' 分隔符，ID: 0x05)
+void UsblControlWindow::Slot_Btn_SendGoal_Clicked()
+{
+    // 1. 检查串口是否打开
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+
+    // 2. 获取并校验输入数据
+    bool okLat, okLon;
+    double goalLat = LineEdit_GoalLat->text().toDouble(&okLat);
+    double goalLon = LineEdit_GoalLon->text().toDouble(&okLon);
+
+    if (!okLat || !okLon) {
+        QMessageBox::warning(this, "错误", "请输入有效的经纬度数值！");
+        return;
+    }
+
+    // 3. 构建载荷 (Payload)
+    // 协议要求: "+XX.XXXXXX+XXX.XXXXXX+" (分隔符为 +, 总长22字节)
+    QString strLat = QString::asprintf("%09.6f", goalLat);
+    QString strLon = QString::asprintf("%10.6f", goalLon);
+    QString payloadStr = "+" + strLat + "+" + strLon + "+";
+
+    // 4. 构建二进制数据包
+    QByteArray binaryPacket;
+    binaryPacket.append((char)0x60); // CID (固定)
+    binaryPacket.append((char)0x01); // DID (固定)
+    
+    // 标识位 (Message Type)
+    // 定位下发是 0x04，目标点下发设为 0x05
+    binaryPacket.append((char)0x05); 
+    
+    binaryPacket.append((char)0x16); // LEN (22字节)
+    binaryPacket.append(payloadStr.toLatin1()); // Payload Bytes
+
+    // 5. 计算 CRC16
+    uint16_t crc = calculateCRC16(binaryPacket);
+
+    // 6. 转换为十六进制字符串 (大写)
+    QString hexData = binaryPacket.toHex().toUpper();
+
+    // 7. 拼接 CRC (小端模式)
+    QString hexCrc = QString::asprintf("%02X%02X", (crc & 0xFF), ((crc >> 8) & 0xFF));
+
+    // 8. 组合最终指令: "$" + HexData + HexCRC + "\r\n"
+    QString fullCommand = "$" + hexData + hexCrc + "\r\n";
+
+    // 9. 发送
+    UsblSerial->write(fullCommand.toUtf8());
+    
+    // 10. 调试信息与反馈
+    qDebug() << "[GoalSend] HexCmd:" << fullCommand.trimmed();
+    qDebug() << "[GoalSend] Payload:" << payloadStr;
+    QMessageBox::information(this, "成功", "目标航路点指令已发送！\n载荷：" + payloadStr);
 }
 
 

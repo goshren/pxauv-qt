@@ -81,6 +81,12 @@ private:
     QPushButton *Btn_Rel2_Open;
     QPushButton *Btn_Rel2_Close;
 
+    // [新增] 7. 目标航路点设置 (导航)
+    QGroupBox *GroupBox_Waypoint;
+    QLineEdit *LineEdit_GoalLat; // 目标纬度
+    QLineEdit *LineEdit_GoalLon; // 目标经度
+    QPushButton *Btn_SendGoal;   // 发送按钮
+
     // --- 右侧地图区域 ---
     QGroupBox *GroupBox_Map;
     QWebEngineView *MapView;     
@@ -117,10 +123,10 @@ private:
     // USBL解析相关
     void ParseSeatracData(const QString &hexString);
 
-    // [修改] 发送解算后的坐标给AUV (带CRC校验)
+    // 发送解算后的坐标给AUV (带CRC校验，自动发送)
     void SendTargetPosToAUV(double lat, double lon);
     
-    // [新增] CRC16计算函数
+    // CRC16计算函数
     uint16_t calculateCRC16(const QByteArray &data);
 
 private slots:
@@ -154,6 +160,9 @@ private slots:
     void Slot_Btn_Rel1_Close_Clicked();
     void Slot_Btn_Rel2_Open_Clicked();
     void Slot_Btn_Rel2_Close_Clicked();
+
+    // [新增] 发送目标点按钮槽函数
+    void Slot_Btn_SendGoal_Clicked();
 };
 
 #endif // USBLCONTROLWINDOW_H
