@@ -1,32 +1,28 @@
 #include "UsblControlWindow.h"
+#include "ui_UsblControlWindow.h" 
 #include <QDebug>
 #include <QRegularExpression>
-#include <QtMath> // 用于 qCos, M_PI
+#include <QtMath> 
 
-// 地球半径 (米)
 const double EARTH_RADIUS = 6378137.0;
 
 UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
 {
     this->setWindowTitle("USBL水声遥控 & 岸基定位系统");
-    // 【修改】调整窗口高度以容纳释放器控制区域 (780 -> 860)
     this->setFixedSize(1050, 860); 
 
     UsblSerial = new QSerialPort(this);
     GpsSerial = new QSerialPort(this);
     
-    // 初始化逻辑变量
     m_baseLatitude = 0.0;
     m_baseLongitude = 0.0;
     m_hasGpsFix = false;
     
     InitUi();
 
-    // [修改 1] 初始化定时器并连接信号槽
     m_queryTimer = new QTimer(this);
     connect(m_queryTimer, &QTimer::timeout, this, &UsblControlWindow::Slot_OnQueryTimerTimeout);
 
-    // 自动扫描并填充串口列表
     QList<QSerialPortInfo> serials = QSerialPortInfo::availablePorts();
     QStringList portList;
     for(const QSerialPortInfo &info : serials) {
@@ -35,25 +31,20 @@ UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
     ComboBox_Port->addItems(portList);
     ComboBox_GpsPort->addItems(portList);
     
-    // 填充波特率
     QStringList baudRates = {"1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"};
     ComboBox_Baud->addItems(baudRates);
     ComboBox_Baud->setCurrentText("9600");
     ComboBox_GpsBaud->addItems(baudRates);
     ComboBox_GpsBaud->setCurrentText("9600");
 
-    // --- 连接信号槽 (USBL 串口) ---
     connect(Btn_OpenSerial, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_OpenSerial_Clicked);
     connect(Btn_CloseSerial, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_CloseSerial_Clicked);
-    // 连接 USBL 数据读取信号 (带缓冲区处理)
     connect(UsblSerial, &QSerialPort::readyRead, this, &UsblControlWindow::Slot_UsblReadData);
 
-    // --- 连接信号槽 (GPS 串口) ---
     connect(Btn_OpenGps, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_OpenGps_Clicked);
     connect(Btn_CloseGps, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_CloseGps_Clicked);
     connect(GpsSerial, &QSerialPort::readyRead, this, &UsblControlWindow::Slot_GpsReadData);
 
-    // --- 连接信号槽 (运动控制) ---
     connect(Btn_Up, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Up_Clicked);
     connect(Btn_Down, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Down_Clicked);
     connect(Btn_Left, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Left_Clicked);
@@ -62,10 +53,8 @@ UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
     connect(Btn_Backward, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Backward_Clicked);
     connect(Btn_Stop, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Stop_Clicked);
     
-    // 连接查询定位按钮
     connect(Btn_QueryLoc, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_QueryLoc_Clicked);
 
-    // 【新增】连接释放器控制按钮
     connect(Btn_Rel1_Open, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel1_Open_Clicked);
     connect(Btn_Rel1_Close, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel1_Close_Clicked);
     connect(Btn_Rel2_Open, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Rel2_Open_Clicked);
@@ -80,13 +69,11 @@ UsblControlWindow::~UsblControlWindow()
 
 void UsblControlWindow::InitUi()
 {
-    // === 左侧面板：控制与配置 ===
     GroupBox_LeftPanel = new QGroupBox(this);
     GroupBox_LeftPanel->setGeometry(5, 5, 440, 850); 
     GroupBox_LeftPanel->setTitle(""); 
     GroupBox_LeftPanel->setStyleSheet("QGroupBox{border:none;}"); 
 
-    // 1. USBL 串口配置
     GroupBox_Serial = new QGroupBox("1. USBL通信设置", GroupBox_LeftPanel);
     GroupBox_Serial->setGeometry(5, 0, 430, 80);
     
@@ -97,7 +84,6 @@ void UsblControlWindow::InitUi()
     Btn_OpenSerial = new QPushButton("打开", GroupBox_Serial); Btn_OpenSerial->setGeometry(310, 25, 50, 30); Btn_OpenSerial->setStyleSheet("color: green; font-weight: bold;");
     Btn_CloseSerial = new QPushButton("关闭", GroupBox_Serial); Btn_CloseSerial->setGeometry(370, 25, 50, 30); Btn_CloseSerial->setEnabled(false);
 
-    // 2. GPS 串口配置
     GroupBox_GpsSerial = new QGroupBox("2. GPS通信设置", GroupBox_LeftPanel);
     GroupBox_GpsSerial->setGeometry(5, 85, 430, 80);
     
@@ -108,7 +94,6 @@ void UsblControlWindow::InitUi()
     Btn_OpenGps = new QPushButton("打开", GroupBox_GpsSerial); Btn_OpenGps->setGeometry(310, 25, 50, 30); Btn_OpenGps->setStyleSheet("color: blue; font-weight: bold;");
     Btn_CloseGps = new QPushButton("关闭", GroupBox_GpsSerial); Btn_CloseGps->setGeometry(370, 25, 50, 30); Btn_CloseGps->setEnabled(false);
 
-    // 3. GPS 数据显示
     GroupBox_GpsInfo = new QGroupBox("3. GPS定位数据 (基站)", GroupBox_LeftPanel);
     GroupBox_GpsInfo->setGeometry(5, 170, 430, 90);
     
@@ -118,7 +103,6 @@ void UsblControlWindow::InitUi()
     LineEdit_GpsLon = new QLineEdit(GroupBox_GpsInfo); LineEdit_GpsLon->setGeometry(260, 25, 140, 25); LineEdit_GpsLon->setReadOnly(true);
     Label_GpsTime = new QLabel("UTC时间: --:--:--", GroupBox_GpsInfo); Label_GpsTime->setGeometry(20, 55, 300, 25); Label_GpsTime->setStyleSheet("color: gray;");
 
-    // 4. USBL 定位信息
     GroupBox_UsblPos = new QGroupBox("4. 水下信标定位信息", GroupBox_LeftPanel);
     GroupBox_UsblPos->setGeometry(5, 265, 430, 140);
 
@@ -138,7 +122,6 @@ void UsblControlWindow::InitUi()
     
     Label_UsblStatus = new QLabel("等待数据...", GroupBox_UsblPos); Label_UsblStatus->setGeometry(20, 110, 350, 20); Label_UsblStatus->setStyleSheet("color: gray; font-size: 10px;");
 
-    // 5. 运动控制
     GroupBox_Control = new QGroupBox("5. 水声遥控指令", GroupBox_LeftPanel);
     GroupBox_Control->setGeometry(5, 415, 430, 290); 
     GroupBox_Control->setEnabled(false); 
@@ -163,27 +146,20 @@ void UsblControlWindow::InitUi()
     Btn_QueryLoc->setGeometry(cx - 75, startY + gap*5 + 5, 150, 40); 
     Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
 
-    // ================== 【新增】 6. 释放器控制 ==================
     GroupBox_Releaser = new QGroupBox("6. 释放器控制 (USBL)", GroupBox_LeftPanel);
     GroupBox_Releaser->setGeometry(5, 715, 430, 80);
-    // GroupBox_Releaser->setEnabled(false); // 默认禁用，等串口打开
 
     Btn_Rel1_Open = new QPushButton("开启释放1", GroupBox_Releaser);
     Btn_Rel1_Open->setGeometry(20, 30, 85, 35);
-    
     Btn_Rel1_Close = new QPushButton("关闭释放1", GroupBox_Releaser);
     Btn_Rel1_Close->setGeometry(115, 30, 85, 35);
-
     Btn_Rel2_Open = new QPushButton("开启释放2", GroupBox_Releaser);
     Btn_Rel2_Open->setGeometry(230, 30, 85, 35);
-
     Btn_Rel2_Close = new QPushButton("关闭释放2", GroupBox_Releaser);
     Btn_Rel2_Close->setGeometry(325, 30, 85, 35);
 
-
-    // === 右侧面板：地图显示 ===
     GroupBox_Map = new QGroupBox("岸基位置实时显示", this);
-    GroupBox_Map->setGeometry(450, 10, 590, 840); // 调整地图高度
+    GroupBox_Map->setGeometry(450, 10, 590, 840); 
     
     MapView = new QWebEngineView(GroupBox_Map);
     MapView->setGeometry(10, 25, 570, 805);
@@ -195,18 +171,14 @@ void UsblControlWindow::InitUi()
     MapView->page()->load(QUrl("qrc:/map/BDMap.html")); 
 }
 
-// ================== 【新增】释放器控制逻辑 ==================
-
 void UsblControlWindow::Slot_Btn_Rel1_Open_Clicked()
 {
     if(!UsblSerial->isOpen()) {
         QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
         return;
     }
-    // 发送开启释放器1指令 (含换行)
     QString cmd = "#60010407406f70656e3140BEC3\r\n";
     UsblSerial->write(cmd.toUtf8());
-    qDebug() << "USBL TX: Release 1 OPEN";
 }
 
 void UsblControlWindow::Slot_Btn_Rel1_Close_Clicked()
@@ -215,10 +187,8 @@ void UsblControlWindow::Slot_Btn_Rel1_Close_Clicked()
         QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
         return;
     }
-    // 发送关闭释放器1指令
     QString cmd = "#6001040740636c6f736531407731\r\n";
     UsblSerial->write(cmd.toUtf8());
-    qDebug() << "USBL TX: Release 1 CLOSE";
 }
 
 void UsblControlWindow::Slot_Btn_Rel2_Open_Clicked()
@@ -227,10 +197,8 @@ void UsblControlWindow::Slot_Btn_Rel2_Open_Clicked()
         QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
         return;
     }
-    // 发送开启释放器2指令
     QString cmd = "#60010407406f70656e3240BE33\r\n";
     UsblSerial->write(cmd.toUtf8());
-    qDebug() << "USBL TX: Release 2 OPEN";
 }
 
 void UsblControlWindow::Slot_Btn_Rel2_Close_Clicked()
@@ -239,35 +207,20 @@ void UsblControlWindow::Slot_Btn_Rel2_Close_Clicked()
         QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
         return;
     }
-    // 发送关闭释放器2指令
     QString cmd = "#6001040740636c6f7365324077C1\r\n";
     UsblSerial->write(cmd.toUtf8());
-    qDebug() << "USBL TX: Release 2 CLOSE";
 }
-
-
-// ================== USBL 读取与解析核心逻辑 (保持不变) ==================
 
 void UsblControlWindow::Slot_UsblReadData()
 {
-    // 1. 将新数据追加到缓冲区
     m_usblBuffer.append(UsblSerial->readAll());
-
-    // 2. 循环处理缓冲区中的每一行数据 (以 \n 分割)
     while (m_usblBuffer.contains('\n')) {
         int lineEndIndex = m_usblBuffer.indexOf('\n');
-        
-        // 提取一行 (移除 \r \n)
         QByteArray lineData = m_usblBuffer.left(lineEndIndex).trimmed();
-        
-        // 从缓冲区移除已处理的行 (包括 \n)
         m_usblBuffer.remove(0, lineEndIndex + 1);
-
         QString lineString = QString(lineData);
 
-        // 3. 过滤：只处理以 $39 或 #39 开头的数据
         if (lineString.startsWith("$39") || lineString.startsWith("#39")) {
-            qDebug() << "Captured USBL Fix Data:" << lineString;
             ParseSeatracData(lineString);
         }
     }
@@ -275,72 +228,48 @@ void UsblControlWindow::Slot_UsblReadData()
 
 void UsblControlWindow::ParseSeatracData(const QString &hexString)
 {
-    // 1. 去除头部标识符
     QString cleanHex = hexString;
     if (cleanHex.startsWith('$') || cleanHex.startsWith('#')) {
         cleanHex = cleanHex.mid(1);
     }
-
-    // 2. 转换为字节数组
     QByteArray buf = QByteArray::fromHex(cleanHex.toLatin1());
     
     int len = buf.size();
     if (len < 5) return;
-
-    // 3. 检查 CID 是否为 0x39 (CID_XCVR_FIX)
     if ((uint8_t)buf[0] != 0x39) return;
 
-    // --- 开始解析 Payload ---
-    int ptr = 1; 
-    ptr += 2; // 跳过 DestID, SrcID
-
-    // FLAGS (1 byte)
+    int ptr = 3; 
     uint8_t flags = (uint8_t)buf[ptr++];
-    // MSG_TYPE (1 byte) 跳过
     ptr++; 
-
-    // --- 跳过基础字段 (固定 12 字节: Attitude, Depth, VOS, RSSI) ---
     ptr += 12;
 
-    // --- 处理 Range 字段 (Bit 0) ---
-    if (flags & 0x01) {
-        ptr += 10; 
-    }
+    if (flags & 0x01) { ptr += 10; }
 
-    // --- 处理 USBL 字段 (Bit 1) ---
     if (flags & 0x02) {
         if (ptr >= len) return;
         uint8_t channels = (uint8_t)buf[ptr++];
-        // 计算块大小: 2*ch + 6
         int usbl_block_size = (2 * channels) + 6;
         ptr += usbl_block_size;
     }
 
-    // --- 处理 Position 字段 (Bit 2) ---
     if (flags & 0x04) {
-        // 确保剩余数据足够 (6字节: East, North, Depth)
         if (ptr + 6 <= len) {
-            // 解析 Easting (X) - INT16 Little Endian
             int16_t easting_raw = (int16_t)((uint8_t)buf[ptr] | ((uint8_t)buf[ptr+1] << 8));
-            float easting_x = easting_raw / 10.0f; // 分米转米
+            float easting_x = easting_raw / 10.0f; 
             ptr += 2;
 
-            // 解析 Northing (Y)
             int16_t northing_raw = (int16_t)((uint8_t)buf[ptr] | ((uint8_t)buf[ptr+1] << 8));
             float northing_y = northing_raw / 10.0f;
             ptr += 2;
 
-            // 解析 Depth (Z)
             int16_t depth_raw = (int16_t)((uint8_t)buf[ptr] | ((uint8_t)buf[ptr+1] << 8));
             float depth_z = depth_raw / 10.0f;
             ptr += 2;
 
-            // 更新 UI - 相对坐标
             LineEdit_UsblX->setText(QString::number(easting_x, 'f', 1));
             LineEdit_UsblY->setText(QString::number(northing_y, 'f', 1));
             LineEdit_UsblZ->setText(QString::number(depth_z, 'f', 1));
             
-            // 计算并更新绝对经纬度
             if (m_hasGpsFix) {
                 CalculateTargetGeoPos(easting_x, northing_y);
                 Label_UsblStatus->setText("解析成功(含绝对坐标) " + QDateTime::currentDateTime().toString("HH:mm:ss"));
@@ -349,8 +278,6 @@ void UsblControlWindow::ParseSeatracData(const QString &hexString)
                 LineEdit_TargetLat->setText("GPS无效");
                 LineEdit_TargetLon->setText("GPS无效");
             }
-            
-            qDebug() << "USBL Pos -> X:" << easting_x << " Y:" << northing_y << " Z:" << depth_z;
         } else {
             Label_UsblStatus->setText("解析错误: 数据不完整");
         }
@@ -359,27 +286,23 @@ void UsblControlWindow::ParseSeatracData(const QString &hexString)
     }
 }
 
-// 根据相对位移计算目标经纬度
 void UsblControlWindow::CalculateTargetGeoPos(float x_offset, float y_offset)
 {
-    // 1. 计算纬度变化 (dLat)
     double dLat = (y_offset / EARTH_RADIUS) * (180.0 / M_PI);
     double targetLat = m_baseLatitude + dLat;
 
-    // 2. 计算经度变化 (dLon)
     double radLat = m_baseLatitude * (M_PI / 180.0);
     double dLon = (x_offset / (EARTH_RADIUS * qCos(radLat))) * (180.0 / M_PI);
     double targetLon = m_baseLongitude + dLon;
 
-    // 3. 更新界面
     LineEdit_TargetLat->setText(QString::number(targetLat, 'f', 6));
     LineEdit_TargetLon->setText(QString::number(targetLon, 'f', 6));
 
-    // 4. 更新地图上的信标位置 (传入经度, 纬度)
     UpdateTargetMapPosition(QString::number(targetLon, 'f', 6), QString::number(targetLat, 'f', 6));
-}
 
-// ================== GPS 数据解析 ==================
+    // 计算完成后，立即带校验下发
+    SendTargetPosToAUV(targetLat, targetLon);
+}
 
 void UsblControlWindow::Slot_GpsReadData()
 {
@@ -393,7 +316,7 @@ void UsblControlWindow::Slot_GpsReadData()
 void UsblControlWindow::ParseNmeaData(const QByteArray &data)
 {
     QString nmea = QString::fromLatin1(data);
-    if (nmea.contains("GGA")) { // BDGGA, GPGGA, GNGGA
+    if (nmea.contains("GGA")) { 
         QStringList parts = nmea.split(',');
         if (parts.size() < 6) return;
 
@@ -404,19 +327,16 @@ void UsblControlWindow::ParseNmeaData(const QByteArray &data)
         QString lonDir = parts[5];
 
         if(latNmea.isEmpty() || lonNmea.isEmpty()) {
-            m_hasGpsFix = false; // 丢失定位
+            m_hasGpsFix = false;
             return;
         }
 
-        // 显示时间
         if(time.size() >= 6) {
              Label_GpsTime->setText("UTC时间: " + time.mid(0,2) + ":" + time.mid(2,2) + ":" + time.mid(4,2));
         }
-        // 显示 NMEA 原始格式
         LineEdit_GpsLat->setText(latNmea + " " + latDir);
         LineEdit_GpsLon->setText(lonNmea + " " + lonDir);
 
-        // 转换为十进制并保存
         double dLat = NmeaToDecimal(latNmea);
         double dLon = NmeaToDecimal(lonNmea);
         if(latDir == "S") dLat = -dLat;
@@ -424,9 +344,8 @@ void UsblControlWindow::ParseNmeaData(const QByteArray &data)
 
         m_baseLatitude = dLat;
         m_baseLongitude = dLon;
-        m_hasGpsFix = true; // 标记定位有效
+        m_hasGpsFix = true; 
 
-        // 更新地图上的"岸基"位置
         UpdateMapPosition(QString::number(dLon, 'f', 6), QString::number(dLat, 'f', 6));
     }
 }
@@ -436,7 +355,6 @@ double UsblControlWindow::NmeaToDecimal(const QString &nmeaStr)
     if(nmeaStr.isEmpty()) return 0.0;
     int dotPos = nmeaStr.indexOf('.');
     if(dotPos < 2) return 0.0;
-    // ddmm.mmmmm -> dd + mm.mmmmm/60
     double minutes = nmeaStr.mid(dotPos - 2).toDouble();
     double degrees = nmeaStr.left(dotPos - 2).toDouble();
     return degrees + (minutes / 60.0);
@@ -444,19 +362,12 @@ double UsblControlWindow::NmeaToDecimal(const QString &nmeaStr)
 
 void UsblControlWindow::UpdateMapPosition(const QString &lon, const QString &lat)
 {
-    // 只有坐标变化时才更新，减少刷新频率
     if(lon == last_longitude && lat == last_latitude) return;
-    
     last_longitude = lon;
     last_latitude = lat;
-
-    // 调用 JS 的 setBasePoint
     QString cmd = QString("setBasePoint(%1, %2)").arg(lon).arg(lat);
     MapView->page()->runJavaScript(cmd);
 }
-
-
-// ================== 串口与按钮槽函数 ==================
 
 void UsblControlWindow::Slot_Btn_OpenSerial_Clicked() {
     UsblSerial->setPortName(ComboBox_Port->currentText());
@@ -466,13 +377,13 @@ void UsblControlWindow::Slot_Btn_OpenSerial_Clicked() {
     UsblSerial->setStopBits(QSerialPort::OneStop);
     UsblSerial->setFlowControl(QSerialPort::NoFlowControl);
     
-    m_usblBuffer.clear(); // 打开前清空缓冲区
+    m_usblBuffer.clear(); 
 
     if(UsblSerial->open(QIODevice::ReadWrite)) {
         Btn_OpenSerial->setEnabled(false);
         Btn_CloseSerial->setEnabled(true);
         GroupBox_Control->setEnabled(true);
-        GroupBox_Releaser->setEnabled(true); // 启用释放器控制
+        GroupBox_Releaser->setEnabled(true); 
         ComboBox_Port->setEnabled(false);
         ComboBox_Baud->setEnabled(false);
     } else {
@@ -481,7 +392,6 @@ void UsblControlWindow::Slot_Btn_OpenSerial_Clicked() {
 }
 
 void UsblControlWindow::Slot_Btn_CloseSerial_Clicked() {
-    // [修改] 关闭串口前，先停止定时器
     if (m_queryTimer->isActive()) {
         m_queryTimer->stop();
         Btn_QueryLoc->setText("查询水下定位 (Ping)");
@@ -492,7 +402,7 @@ void UsblControlWindow::Slot_Btn_CloseSerial_Clicked() {
     Btn_OpenSerial->setEnabled(true);
     Btn_CloseSerial->setEnabled(false);
     GroupBox_Control->setEnabled(false);
-    GroupBox_Releaser->setEnabled(false); // 禁用释放器控制
+    GroupBox_Releaser->setEnabled(false);
     ComboBox_Port->setEnabled(true);
     ComboBox_Baud->setEnabled(true);
 }
@@ -522,10 +432,8 @@ void UsblControlWindow::Slot_Btn_CloseGps_Clicked() {
 }
 
 void UsblControlWindow::Slot_Btn_QueryLoc_Clicked() {
-    // 检查串口是否打开
     if(!UsblSerial->isOpen()) {
         QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
-        // 如果定时器正在运行（异常情况），强制停止
         if(m_queryTimer->isActive()) {
             m_queryTimer->stop();
             Btn_QueryLoc->setText("查询水下定位 (Ping)");
@@ -534,44 +442,28 @@ void UsblControlWindow::Slot_Btn_QueryLoc_Clicked() {
         return;
     }
 
-    // 判断当前状态：是“正在查询”还是“空闲”
     if (m_queryTimer->isActive()) {
-        // --- 当前正在查询，执行【停止】逻辑 ---
         m_queryTimer->stop();
-        
-        // 恢复按钮外观
         Btn_QueryLoc->setText("查询水下定位 (Ping)");
         Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
     } else {
-        // --- 当前空闲，执行【开始】逻辑 ---
-        
-        // 立即执行一次查询，不用等2秒
         Slot_OnQueryTimerTimeout();
-        
-        // 启动定时器，间隔 2000 毫秒 (2秒)
         m_queryTimer->start(2000);
-        
-        // 修改按钮外观为“停止”样式
         Btn_QueryLoc->setText("停止自动查询 (Stop)");
         Btn_QueryLoc->setStyleSheet("color: red; font-weight: bold; border: 1px solid red; border-radius: 5px; background-color: #ffeeee;");
     }
 }
 
 void UsblControlWindow::Slot_OnQueryTimerTimeout() {
-    // 双重检查串口状态，防止中途串口断开导致崩溃或错误
     if(!UsblSerial->isOpen()) {
         m_queryTimer->stop();
         Btn_QueryLoc->setText("查询水下定位 (Ping)");
-        // 可以恢复原来的样式
         Btn_QueryLoc->setStyleSheet("color: blue; font-weight: bold; border: 1px solid blue; border-radius: 5px;");
         return;
     }
 
-    // 发送查询指令 #4001040187 + \r\n
     QString cmd = "#4001040187\r\n"; 
     UsblSerial->write(cmd.toUtf8());
-    
-    // 这里可以打印日志，看是否在持续发送
     qDebug() << "USBL Auto Query TX:" << cmd.trimmed() << " Time:" << QDateTime::currentDateTime().toString("HH:mm:ss");
 }
 
@@ -587,14 +479,76 @@ void UsblControlWindow::SendUsblCommand(const QString &type, int gear) {
 
 void UsblControlWindow::UpdateTargetMapPosition(const QString &lon, const QString &lat)
 {
-    // 调用 JS 的 setTargetPoint
     QString cmd = QString("setTargetPoint(%1, %2)").arg(lon).arg(lat);
     MapView->page()->runJavaScript(cmd);
 }
 
+// [新增] CRC16-IBM 计算 (Poly: 0xA001)
+uint16_t UsblControlWindow::calculateCRC16(const QByteArray &data)
+{
+    uint16_t crc = 0;
+    uint16_t poly = 0xA001; // Reversed polynomial
+
+    for (int j = 0; j < data.size(); ++j) {
+        uint8_t byte = (uint8_t)data[j];
+        uint8_t v = byte;
+        for (int i = 0; i < 8; ++i) {
+            if ((v & 0x01) ^ (crc & 0x01)) {
+                crc >>= 1;
+                crc ^= poly;
+            } else {
+                crc >>= 1;
+            }
+            v >>= 1;
+        }
+    }
+    return crc;
+}
+
+// [重写] 发送坐标 (十六进制封装 + CRC16 + 固定开头)
+void UsblControlWindow::SendTargetPosToAUV(double lat, double lon)
+{
+    // 1. 构建明文载荷: "+18.123456+109.262626+" (22字节)
+    QString strLat = QString::asprintf("%09.6f", lat);
+    QString strLon = QString::asprintf("%10.6f", lon);
+    QString payloadStr = "+" + strLat + "+" + strLon + "+";
+
+    // 2. 构建二进制数据包 (CID, DID, Type, Len, Payload)
+    QByteArray binaryPacket;
+    binaryPacket.append((char)0x60); // CID
+    binaryPacket.append((char)0x01); // DID
+    binaryPacket.append((char)0x04); // MSG_TYPE
+    binaryPacket.append((char)0x16); // LEN (22字节)
+    binaryPacket.append(payloadStr.toLatin1()); // Payload Bytes
+
+    // 3. 计算 CRC16
+    uint16_t crc = calculateCRC16(binaryPacket);
+
+    // 4. 转换为十六进制字符串 (大写)
+    // binaryPacket -> HexString
+    QString hexData = binaryPacket.toHex().toUpper();
+
+    // 5. 拼接 CRC (小端模式: 低字节在前)
+    // crc & 0xFF 是低字节, (crc >> 8) 是高字节
+    QString hexCrc = QString::asprintf("%02X%02X", (crc & 0xFF), ((crc >> 8) & 0xFF));
+
+    // 6. 组合最终发送指令: "$" + HexData + HexCRC + "\r\n"
+    QString fullCommand = "$" + hexData + hexCrc + "\r\n";
+
+    // 7. 发送
+    if (UsblSerial->isOpen()) {
+        UsblSerial->write(fullCommand.toUtf8());
+        
+        // 调试打印
+        qDebug() << "[AutoSend] HexCmd:" << fullCommand.trimmed();
+    }
+}
+
+
 QString UsblControlWindow::GetProtocolString(const QString &type, int gear) {
     if (type == "ZE") return "#60010408235A4524243030233BD5";
     QString result = "";
+    // ... 其他指令保持不变 ...
     if (type == "FD") {
         switch (gear) {
             case 1: result = "#600104082346442424303123E655"; break;

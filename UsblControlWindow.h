@@ -52,14 +52,14 @@ private:
 
     // 4. USBL 相对定位数据显示
     QGroupBox *GroupBox_UsblPos;
-    QLineEdit *LineEdit_UsblX; // 东向 X
-    QLineEdit *LineEdit_UsblY; // 北向 Y
-    QLineEdit *LineEdit_UsblZ; // 深度 Z
-    QLabel *Label_UsblStatus;  // 解析状态提示
+    QLineEdit *LineEdit_UsblX; 
+    QLineEdit *LineEdit_UsblY; 
+    QLineEdit *LineEdit_UsblZ; 
+    QLabel *Label_UsblStatus;  
 
-    // --- 【新增】目标绝对坐标显示控件 ---
-    QLineEdit *LineEdit_TargetLat; // 目标纬度
-    QLineEdit *LineEdit_TargetLon; // 目标经度
+    // 目标绝对坐标显示控件
+    QLineEdit *LineEdit_TargetLat; 
+    QLineEdit *LineEdit_TargetLon; 
 
     // 5. 运动控制
     QGroupBox *GroupBox_Control;
@@ -74,7 +74,7 @@ private:
     QLabel *Label_Speed;
     QPushButton *Btn_QueryLoc; // 查询定位按钮
 
-    // 6. 【新增】释放器控制区域
+    // 6. 释放器控制区域
     QGroupBox *GroupBox_Releaser;
     QPushButton *Btn_Rel1_Open;
     QPushButton *Btn_Rel1_Close;
@@ -91,15 +91,13 @@ private:
     // --- 逻辑变量 ---
     QSerialPort *UsblSerial;
     QSerialPort *GpsSerial;
-    // [修改 2] 在 private 区域添加定时器指针
-    QTimer *m_queryTimer;
+    QTimer *m_queryTimer; // 定时器
 
     // --- 逻辑变量 ---
-    double m_baseLatitude = 0.0;  // 岸基纬度 (十进制)
-    double m_baseLongitude = 0.0; // 岸基经度 (十进制)
-    bool m_hasGpsFix = false;     // 是否已获取有效GPS
+    double m_baseLatitude = 0.0;  
+    double m_baseLongitude = 0.0; 
+    bool m_hasGpsFix = false;     
     
-    // USBL数据缓冲区
     QByteArray m_usblBuffer; 
 
     // --- 辅助函数 ---
@@ -119,6 +117,11 @@ private:
     // USBL解析相关
     void ParseSeatracData(const QString &hexString);
 
+    // [修改] 发送解算后的坐标给AUV (带CRC校验)
+    void SendTargetPosToAUV(double lat, double lon);
+    
+    // [新增] CRC16计算函数
+    uint16_t calculateCRC16(const QByteArray &data);
 
 private slots:
     // 串口槽
@@ -133,7 +136,7 @@ private slots:
     void Slot_Btn_CloseGps_Clicked();
     void Slot_GpsReadData(); 
 
-    // [修改 3] 添加定时器超时槽函数
+    // 定时器超时槽函数
     void Slot_OnQueryTimerTimeout();
 
     // 运动控制槽
@@ -146,13 +149,11 @@ private slots:
     void Slot_Btn_Stop_Clicked();
     void Slot_Btn_QueryLoc_Clicked();
     
-
-    // 【新增】释放器控制槽
+    // 释放器控制槽
     void Slot_Btn_Rel1_Open_Clicked();
     void Slot_Btn_Rel1_Close_Clicked();
     void Slot_Btn_Rel2_Open_Clicked();
     void Slot_Btn_Rel2_Close_Clicked();
-    
 };
 
 #endif // USBLCONTROLWINDOW_H
