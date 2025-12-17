@@ -1,5 +1,4 @@
 #include "UsblControlWindow.h"
-#include "ui_UsblControlWindow.h" 
 #include <QDebug>
 #include <QRegularExpression>
 #include <QtMath> 
@@ -573,7 +572,7 @@ void UsblControlWindow::SendTargetPosToAUV(double lat, double lon)
     }
 }
 
-// [新增] 目标点下发槽函数 (使用 '+' 分隔符，ID: 0x05)
+// [新增] 目标点下发槽函数 (使用 '+' 分隔符，ID: 0x04)
 void UsblControlWindow::Slot_Btn_SendGoal_Clicked()
 {
     // 1. 检查串口是否打开
@@ -604,8 +603,8 @@ void UsblControlWindow::Slot_Btn_SendGoal_Clicked()
     binaryPacket.append((char)0x01); // DID (固定)
     
     // 标识位 (Message Type)
-    // 定位下发是 0x04，目标点下发设为 0x05
-    binaryPacket.append((char)0x05); 
+    // 定位下发是 0x04，目标点下发设为 0x04
+    binaryPacket.append((char)0x04);
     
     binaryPacket.append((char)0x16); // LEN (22字节)
     binaryPacket.append(payloadStr.toLatin1()); // Payload Bytes
@@ -619,8 +618,8 @@ void UsblControlWindow::Slot_Btn_SendGoal_Clicked()
     // 7. 拼接 CRC (小端模式)
     QString hexCrc = QString::asprintf("%02X%02X", (crc & 0xFF), ((crc >> 8) & 0xFF));
 
-    // 8. 组合最终指令: "$" + HexData + HexCRC + "\r\n"
-    QString fullCommand = "$" + hexData + hexCrc + "\r\n";
+    // 8. 组合最终指令: "#" + HexData + HexCRC + "\r\n"
+    QString fullCommand = "#" + hexData + hexCrc + "\r\n";
 
     // 9. 发送
     UsblSerial->write(fullCommand.toUtf8());
