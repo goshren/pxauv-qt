@@ -8,7 +8,7 @@ const double EARTH_RADIUS = 6378137.0;
 UsblControlWindow::UsblControlWindow(QWidget *parent) : QWidget(parent)
 {
     this->setWindowTitle("无缆水下机器人控制软件");
-    this->setFixedSize(1050, 900);
+    this->setFixedSize(1350, 900);
 
     UsblSerial = new QSerialPort(this);
     GpsSerial = new QSerialPort(this);
@@ -158,43 +158,201 @@ void UsblControlWindow::InitUi()
     Btn_Rel2_Close = new QPushButton("关闭释放2", GroupBox_Releaser);
     Btn_Rel2_Close->setGeometry(325, 30, 85, 35);
 
-// ================== [新增] 7. 目标航路点设置 ==================
-    GroupBox_Waypoint = new QGroupBox("7. 目标航路点下发 (导航)", GroupBox_LeftPanel);
-    GroupBox_Waypoint->setGeometry(5, 800, 430, 80); 
-
-    QLabel *lblGLat = new QLabel("目标纬度:", GroupBox_Waypoint);
-    lblGLat->setGeometry(10, 30, 60, 25);
-    LineEdit_GoalLat = new QLineEdit(GroupBox_Waypoint);
-    LineEdit_GoalLat->setGeometry(70, 30, 90, 25);
-    LineEdit_GoalLat->setPlaceholderText("18.xxxxxx");
-
-    QLabel *lblGLon = new QLabel("目标经度:", GroupBox_Waypoint);
-    lblGLon->setGeometry(170, 30, 60, 25);
-    LineEdit_GoalLon = new QLineEdit(GroupBox_Waypoint);
-    LineEdit_GoalLon->setGeometry(230, 30, 90, 25);
-    LineEdit_GoalLon->setPlaceholderText("109.xxxxxx");
-
-    Btn_SendGoal = new QPushButton("下发目标", GroupBox_Waypoint);
-    Btn_SendGoal->setGeometry(330, 28, 80, 30);
-    Btn_SendGoal->setStyleSheet("color: darkred; font-weight: bold;");
-
-    // 连接发送按钮信号
-    connect(Btn_SendGoal, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_SendGoal_Clicked);
-
-
-// === 右侧面板：地图显示 ===
+    // --- 右侧面板：地图显示 ---
     GroupBox_Map = new QGroupBox("岸基位置实时显示", this);
-    // [修改] 地图高度适配窗口
     GroupBox_Map->setGeometry(450, 10, 590, 880); 
     
+    // [新增] 清除轨迹按钮 (悬浮在地图区域右上角)
+    Btn_ClearTrack = new QPushButton("清除轨迹", GroupBox_Map);
+    Btn_ClearTrack->setGeometry(480, 25, 100, 30); // 放在右上角
+    Btn_ClearTrack->setStyleSheet("color: white; background-color: #d9534f; border-radius: 4px; font-weight: bold;");
+    connect(Btn_ClearTrack, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_ClearTrack_Clicked);
+
+    // [修改] 地图视图位置 (给上方按钮留一点空隙，或者直接覆盖也行，这里选择让出一点顶部空间)
+    // 之前 y=25, 现在改为 y=60，或者保持不变让按钮浮在上方
+    // 为了美观，建议让地图稍微下降一点点，或者按钮放在标题栏旁边
     MapView = new QWebEngineView(GroupBox_Map);
-    MapView->setGeometry(10, 25, 570, 845);
+    MapView->setGeometry(10, 60, 570, 810); // y从25改为60，高度相应减小
 
     QWebChannel *channel = new QWebChannel(this);
     JSBridge = new bridge(this); 
     channel->registerObject("webBridge", JSBridge);
     MapView->page()->setWebChannel(channel);
     MapView->page()->load(QUrl("qrc:/map/BDMap.html"));
+
+// --- [新增] 第三列：右侧面板 (x = 1050) ---
+    GroupBox_RightPanel = new QGroupBox("智能控制面板", this);
+    GroupBox_RightPanel->setGeometry(1050, 10, 290, 880); 
+    // 稍微美化一下右侧面板背景，区分功能区
+    GroupBox_RightPanel->setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #aaa; margin-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px; }");
+
+    // [新增] 8. 定深/定高控制组件
+    GroupBox_AutoControl = new QGroupBox("8. 定深/定高控制", GroupBox_RightPanel);
+    GroupBox_AutoControl->setGeometry(10, 30, 270, 200); // 在右侧面板顶部
+    
+    // === 定深部分 ===
+    Label_DepthTitle = new QLabel("定深控制 (Auto Depth)", GroupBox_AutoControl);
+    Label_DepthTitle->setGeometry(10, 30, 200, 20);
+    Label_DepthTitle->setStyleSheet("color: darkblue; font-weight: bold;");
+
+    QLabel *lblDInput = new QLabel("目标深度(m):", GroupBox_AutoControl);
+    lblDInput->setGeometry(10, 60, 80, 25);
+
+    LineEdit_DepthVal = new QLineEdit("01.5", GroupBox_AutoControl);
+    LineEdit_DepthVal->setGeometry(95, 60, 60, 25);
+    LineEdit_DepthVal->setAlignment(Qt::AlignCenter);
+    LineEdit_DepthVal->setPlaceholderText("xx.x");
+
+    Btn_Depth_Open = new QPushButton("开启定深", GroupBox_AutoControl);
+    Btn_Depth_Open->setGeometry(165, 58, 70, 30);
+    Btn_Depth_Open->setStyleSheet("color: white; background-color: #28a745; border-radius: 4px;");
+
+    Btn_Depth_Close = new QPushButton("关闭定深", GroupBox_AutoControl);
+    Btn_Depth_Close->setGeometry(165, 95, 70, 30);
+    Btn_Depth_Close->setStyleSheet("color: white; background-color: #dc3545; border-radius: 4px;");
+
+    // 分隔线
+    QFrame *line = new QFrame(GroupBox_AutoControl);
+    line->setGeometry(10, 135, 250, 2);
+    line->setFrameShape(QFrame::HLine);
+    line->setFrameShadow(QFrame::Sunken);
+
+    // === 定高部分 ===
+    Label_AltTitle = new QLabel("定高控制 (Auto Altitude)", GroupBox_AutoControl);
+    Label_AltTitle->setGeometry(10, 145, 200, 20);
+    Label_AltTitle->setStyleSheet("color: darkcyan; font-weight: bold;");
+
+    QLabel *lblAInput = new QLabel("目标高度(m):", GroupBox_AutoControl);
+    lblAInput->setGeometry(10, 175, 80, 25);
+
+    LineEdit_AltVal = new QLineEdit("01.0", GroupBox_AutoControl);
+    LineEdit_AltVal->setGeometry(95, 175, 60, 25);
+    LineEdit_AltVal->setAlignment(Qt::AlignCenter);
+
+    Btn_Alt_Open = new QPushButton("开启定高", GroupBox_AutoControl);
+    Btn_Alt_Open->setGeometry(165, 173, 70, 30);
+    Btn_Alt_Open->setStyleSheet("color: white; background-color: #17a2b8; border-radius: 4px;");
+
+    Btn_Alt_Close = new QPushButton("关闭定高", GroupBox_AutoControl);
+    Btn_Alt_Close->setGeometry(165, 210, 70, 30); // 注意：这里高度可能超出了GroupBox_AutoControl (200)，需调整GroupBox高度
+    
+    // 调整 GroupBox 高度以适应内容
+    GroupBox_AutoControl->setGeometry(10, 30, 270, 260); 
+
+    // 连接信号槽
+    connect(Btn_Depth_Open, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Depth_Open_Clicked);
+    connect(Btn_Depth_Close, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Depth_Close_Clicked);
+    connect(Btn_Alt_Open, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Alt_Open_Clicked);
+    connect(Btn_Alt_Close, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_Alt_Close_Clicked);
+
+// [新增] 9. 预编程运动序列设置
+    GroupBox_Program = new QGroupBox("9. 预编程任务下发", GroupBox_RightPanel);
+    GroupBox_Program->setGeometry(10, 300, 270, 220); 
+
+    int lineGap = 45;
+    int progStartY = 30;
+// --- 步骤 1 ---
+    Label_Step1 = new QLabel("动作1:", GroupBox_Program);
+    Label_Step1->setGeometry(10, progStartY, 40, 25);
+    
+    Combo_Act1 = new QComboBox(GroupBox_Program);
+    Combo_Act1->setGeometry(55, progStartY, 100, 25);
+    Combo_Act1->addItem("前进 (F)", 'F');
+    Combo_Act1->addItem("后退 (B)", 'B');
+    Combo_Act1->addItem("左转 (L)", 'L');
+    Combo_Act1->addItem("右转 (R)", 'R');
+    
+    // [修改] 连接信号槽：当动作改变时，刷新后面的参数框
+    connect(Combo_Act1, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &UsblControlWindow::Slot_Act1_Changed);
+
+    Combo_Dist1 = new QComboBox(GroupBox_Program);
+    Combo_Dist1->setGeometry(165, progStartY, 90, 25);
+    
+    // [修改] 不再使用 for 循环写死，而是调用函数初始化
+    RefreshDistCombo(Combo_Act1, Combo_Dist1); 
+
+
+    // --- 步骤 2 ---
+    Label_Step2 = new QLabel("动作2:", GroupBox_Program);
+    Label_Step2->setGeometry(10, progStartY + lineGap, 40, 25);
+    
+    Combo_Act2 = new QComboBox(GroupBox_Program);
+    Combo_Act2->setGeometry(55, progStartY + lineGap, 100, 25);
+    Combo_Act2->addItem("前进 (F)", 'F');
+    Combo_Act2->addItem("后退 (B)", 'B');
+    Combo_Act2->addItem("左转 (L)", 'L');
+    Combo_Act2->addItem("右转 (R)", 'R');
+    
+    connect(Combo_Act2, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &UsblControlWindow::Slot_Act2_Changed);
+
+    Combo_Dist2 = new QComboBox(GroupBox_Program);
+    Combo_Dist2->setGeometry(165, progStartY + lineGap, 90, 25);
+    
+    RefreshDistCombo(Combo_Act2, Combo_Dist2);
+
+
+    // --- 步骤 3 ---
+    Label_Step3 = new QLabel("动作3:", GroupBox_Program);
+    Label_Step3->setGeometry(10, progStartY + lineGap*2, 40, 25);
+    
+    Combo_Act3 = new QComboBox(GroupBox_Program);
+    Combo_Act3->setGeometry(55, progStartY + lineGap*2, 100, 25);
+    Combo_Act3->addItem("前进 (F)", 'F');
+    Combo_Act3->addItem("后退 (B)", 'B');
+    Combo_Act3->addItem("左转 (L)", 'L');
+    Combo_Act3->addItem("右转 (R)", 'R');
+    
+    connect(Combo_Act3, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &UsblControlWindow::Slot_Act3_Changed);
+
+    Combo_Dist3 = new QComboBox(GroupBox_Program);
+    Combo_Dist3->setGeometry(165, progStartY + lineGap*2, 90, 25);
+    
+    RefreshDistCombo(Combo_Act3, Combo_Dist3);
+
+    // --- 发送按钮 ---
+    Btn_SendProg = new QPushButton("发送任务序列", GroupBox_Program);
+    Btn_SendProg->setGeometry(55, progStartY + lineGap*3 + 5, 160, 35); // 【修改点】使用 progStartY
+    Btn_SendProg->setStyleSheet("color: white; background-color: #6f42c1; font-weight: bold; border-radius: 5px;");
+    
+    connect(Btn_SendProg, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_SendProg_Clicked);
+
+// ================== [移动并修改] 10. 目标航路点设置 ==================
+    // 位置计算: Section 9 (预编程) y=300, h=220 -> 底部 y=520
+    // 我们留 20px 间距，设置新 Y = 540
+    
+    GroupBox_Waypoint = new QGroupBox("7. 目标航路点下发 (导航)", GroupBox_RightPanel);
+    GroupBox_Waypoint->setGeometry(10, 540, 270, 100); // 宽度适配右侧，高度略增适应两行布局
+
+    // --- 紧凑布局设计 (270px 宽) ---
+    // 左边放输入框，右边放发送按钮
+    
+    // Row 1: 纬度
+    QLabel *lblGLat = new QLabel("纬度:", GroupBox_Waypoint);
+    lblGLat->setGeometry(10, 30, 35, 25);
+    
+    LineEdit_GoalLat = new QLineEdit(GroupBox_Waypoint);
+    LineEdit_GoalLat->setGeometry(50, 30, 90, 25);
+    LineEdit_GoalLat->setPlaceholderText("18.xxxxxx");
+    LineEdit_GoalLat->setAlignment(Qt::AlignCenter);
+
+    // Row 2: 经度
+    QLabel *lblGLon = new QLabel("经度:", GroupBox_Waypoint);
+    lblGLon->setGeometry(10, 60, 35, 25);
+    
+    LineEdit_GoalLon = new QLineEdit(GroupBox_Waypoint);
+    LineEdit_GoalLon->setGeometry(50, 60, 90, 25);
+    LineEdit_GoalLon->setPlaceholderText("109.xxxxxx");
+    LineEdit_GoalLon->setAlignment(Qt::AlignCenter);
+
+    // Right Side: 大大的发送按钮
+    Btn_SendGoal = new QPushButton("下发\n目标点", GroupBox_Waypoint);
+    Btn_SendGoal->setGeometry(150, 30, 110, 55); // 占据右侧空间
+    Btn_SendGoal->setStyleSheet("color: white; background-color: #d9534f; font-weight: bold; border-radius: 5px;");
+
+    // 连接信号槽 (确保没有重复连接，如果之前删除了旧代码，这里需要重新连接)
+    connect(Btn_SendGoal, &QPushButton::clicked, this, &UsblControlWindow::Slot_Btn_SendGoal_Clicked);
+
+
 }
 
 void UsblControlWindow::Slot_Btn_Rel1_Open_Clicked()
@@ -630,6 +788,182 @@ void UsblControlWindow::Slot_Btn_SendGoal_Clicked()
     QMessageBox::information(this, "成功", "目标航路点指令已发送！\n载荷：" + payloadStr);
 }
 
+// [新增] 通用定深定高发送函数实现
+void UsblControlWindow::SendAutoControlCmd(const QString &type, const QString &value, bool isEnable)
+{
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+
+    QString payloadStr;
+
+    if (isEnable) {
+        // 1. 格式化数值: 确保是 xx.x 格式 (例如 1.5 -> 01.5)
+        double val = value.toDouble();
+        // 使用 %04.1f 格式化为总宽4位(含小数点)，一位小数，前补0
+        // 例如: 1.5 -> "01.5", 10.0 -> "10.0"
+        QString formattedVal = QString::asprintf("%04.1f", val);
+        
+        // 构建开启指令: !AD:xx.x!
+        payloadStr = QString("!%1:%2!").arg(type).arg(formattedVal);
+    } else {
+        // 构建关闭指令: !AD:OFFF!
+        payloadStr = QString("!%1:OFFF!").arg(type);
+    }
+
+    // 2. 检查载荷长度是否为9字节
+    if (payloadStr.length() != 9) {
+        qDebug() << "Warning: Payload length is not 9 bytes:" << payloadStr;
+    }
+
+    // 3. 构建二进制数据包
+    QByteArray binaryPacket;
+    binaryPacket.append((char)0x60); // CID
+    binaryPacket.append((char)0x01); // DID
+    binaryPacket.append((char)0x04); // MSG_TYPE (参考旧代码定为0x04)
+    
+    // 【关键】长度自动设为载荷长度（9），如果必须是08，请手动改为 (char)0x08
+    binaryPacket.append((char)payloadStr.length()); 
+    
+    binaryPacket.append(payloadStr.toLatin1()); // 添加载荷
+
+    // 4. 计算 CRC16 (使用您现有的辅助函数)
+    uint16_t crc = calculateCRC16(binaryPacket);
+
+    // 5. 转十六进制字符串并拼接
+    QString hexData = binaryPacket.toHex().toUpper();
+    QString hexCrc = QString::asprintf("%02X%02X", (crc & 0xFF), ((crc >> 8) & 0xFF)); // 小端
+
+    // 6. 最终指令结构: # + HexData + HexCRC + \r\n
+    QString fullCommand = "#" + hexData + hexCrc + "\r\n";
+
+    // 7. 发送
+    UsblSerial->write(fullCommand.toUtf8());
+    
+    // 调试打印
+    qDebug() << "[AutoControl] Type:" << type << " Cmd:" << payloadStr << " Hex:" << fullCommand.trimmed();
+}
+
+void UsblControlWindow::Slot_Btn_Depth_Open_Clicked()
+{
+    QString val = LineEdit_DepthVal->text();
+    SendAutoControlCmd("AD", val, true);
+}
+
+void UsblControlWindow::Slot_Btn_Depth_Close_Clicked()
+{
+    SendAutoControlCmd("AD", "", false);
+}
+
+void UsblControlWindow::Slot_Btn_Alt_Open_Clicked()
+{
+    QString val = LineEdit_AltVal->text();
+    SendAutoControlCmd("AH", val, true);
+}
+
+void UsblControlWindow::Slot_Btn_Alt_Close_Clicked()
+{
+    SendAutoControlCmd("AH", "", false);
+}
+
+void UsblControlWindow::Slot_Btn_SendProg_Clicked()
+{
+    // 1. 检查串口
+    if(!UsblSerial->isOpen()) {
+        QMessageBox::warning(this, "提示", "请先打开USBL通信串口！");
+        return;
+    }
+
+    // 2. 提取用户选择的动作和距离 (从 itemData 获取对应的字符)
+    QChar act1 = Combo_Act1->currentData().toChar();
+    QChar dist1 = Combo_Dist1->currentData().toChar();
+    
+    QChar act2 = Combo_Act2->currentData().toChar();
+    QChar dist2 = Combo_Dist2->currentData().toChar();
+    
+    QChar act3 = Combo_Act3->currentData().toChar();
+    QChar dist3 = Combo_Dist3->currentData().toChar();
+
+    // 3. 构建载荷字符串 "&XNXNXN&" (8字节)
+    QString payloadStr = QString("&%1%2%3%4%5%6&")
+            .arg(act1).arg(dist1)
+            .arg(act2).arg(dist2)
+            .arg(act3).arg(dist3);
+    
+    // 校验长度 (理论上必然是8)
+    if (payloadStr.length() != 8) {
+        qDebug() << "Error: Program payload length incorrect!";
+        return;
+    }
+
+    // 4. 构建二进制数据包 (参考之前的协议结构)
+    QByteArray binaryPacket;
+    binaryPacket.append((char)0x60); // CID
+    binaryPacket.append((char)0x01); // DID
+    binaryPacket.append((char)0x04); // MSG_TYPE (控制指令通用类型)
+    
+    binaryPacket.append((char)0x08); // LEN (固定8字节载荷)
+    binaryPacket.append(payloadStr.toLatin1()); // Payload
+
+    // 5. 计算 CRC16
+    uint16_t crc = calculateCRC16(binaryPacket);
+    
+    // 6. 转十六进制并拼接
+    QString hexData = binaryPacket.toHex().toUpper();
+    QString hexCrc = QString::asprintf("%02X%02X", (crc & 0xFF), ((crc >> 8) & 0xFF));
+    
+    QString fullCommand = "#" + hexData + hexCrc + "\r\n";
+
+    // 7. 发送
+    UsblSerial->write(fullCommand.toUtf8());
+
+    // 8. 用户反馈与日志
+    qDebug() << "[ProgSend] Payload:" << payloadStr << " Hex:" << fullCommand.trimmed();
+    QMessageBox::information(this, "发送成功", 
+        QString("预编程任务已发送:\n步骤1: %1 %2\n步骤2: %3 %4\n步骤3: %5 %6")
+        .arg(Combo_Act1->currentText()).arg(Combo_Dist1->currentText())
+        .arg(Combo_Act2->currentText()).arg(Combo_Dist2->currentText())
+        .arg(Combo_Act3->currentText()).arg(Combo_Dist3->currentText()));
+}
+
+// [新增] 辅助函数：根据动作类型动态填充参数列表
+void UsblControlWindow::RefreshDistCombo(QComboBox* actCombo, QComboBox* distCombo)
+{
+    // 1. 获取当前选中的动作字符 (F, B, L, R)
+    QChar actChar = actCombo->currentData().toChar();
+    
+    // 2. 清空现有选项
+    distCombo->clear();
+
+    // 3. 根据动作类型填充不同内容
+    if (actChar == 'F' || actChar == 'B') {
+        // --- 直线运动 (米) ---
+        // 1~9 代表 5m~45m
+        for(int i=1; i<=9; i++) {
+            distCombo->addItem(QString("%1 米").arg(i*5), QChar('0' + i));
+        }
+    } 
+    else if (actChar == 'L' || actChar == 'R') {
+        // --- 转向运动 (度) ---
+        // 1 代表 90度
+        // 2 代表 180度
+        // 3 代表 270度
+        // 4 代表 360度
+        for(int i=1; i<=4; i++) {
+            distCombo->addItem(QString("%1 度").arg(i*90), QChar('0' + i));
+        }
+    }
+    
+    // 默认选中第一个
+    if(distCombo->count() > 0) distCombo->setCurrentIndex(0);
+}
+
+// [新增] 槽函数实现
+void UsblControlWindow::Slot_Act1_Changed(int index) { RefreshDistCombo(Combo_Act1, Combo_Dist1); }
+void UsblControlWindow::Slot_Act2_Changed(int index) { RefreshDistCombo(Combo_Act2, Combo_Dist2); }
+void UsblControlWindow::Slot_Act3_Changed(int index) { RefreshDistCombo(Combo_Act3, Combo_Dist3); }
+
 
 QString UsblControlWindow::GetProtocolString(const QString &type, int gear) {
     if (type == "ZE") return "#60010408235A4524243030233BD5";
@@ -685,6 +1019,15 @@ QString UsblControlWindow::GetProtocolString(const QString &type, int gear) {
         }
     }
     return result;
+}
+// 清除轨迹槽函数
+void UsblControlWindow::Slot_Btn_ClearTrack_Clicked()
+{
+    // 调用 JS 中的 clearTrack() 函数
+    MapView->page()->runJavaScript("clearTrack();");
+    
+    // 可以在这里打印日志
+    qDebug() << "User cleared the map trajectory.";
 }
 
 // 槽函数绑定

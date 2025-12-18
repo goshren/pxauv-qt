@@ -80,19 +80,38 @@ private:
     QPushButton *Btn_Rel1_Close;
     QPushButton *Btn_Rel2_Open;
     QPushButton *Btn_Rel2_Close;
-
     // [新增] 7. 目标航路点设置 (导航)
     QGroupBox *GroupBox_Waypoint;
     QLineEdit *LineEdit_GoalLat; // 目标纬度
     QLineEdit *LineEdit_GoalLon; // 目标经度
     QPushButton *Btn_SendGoal;   // 发送按钮
 
-    // --- 右侧地图区域 ---
+
+// --- 右侧地图区域 ---
     QGroupBox *GroupBox_Map;
+    QPushButton *Btn_ClearTrack; // [新增] 清除轨迹按钮
     QWebEngineView *MapView;     
     bridge *JSBridge;            
     QString last_longitude;      
     QString last_latitude;
+
+// [新增] --- 右侧面板区域 ---
+    QGroupBox *GroupBox_RightPanel; // 第3列容器
+    
+    // [新增] 8. 定深/定高控制 (放置在右侧面板)
+    QGroupBox *GroupBox_AutoControl;
+    
+    // === 定深控件声明 ===
+    QLabel *Label_DepthTitle;        
+    QLineEdit *LineEdit_DepthVal;
+    QPushButton *Btn_Depth_Open;
+    QPushButton *Btn_Depth_Close;
+    
+    // === 定高控件声明 ===
+    QLabel *Label_AltTitle;          
+    QLineEdit *LineEdit_AltVal;
+    QPushButton *Btn_Alt_Open;
+    QPushButton *Btn_Alt_Close;
 
     // --- 逻辑变量 ---
     QSerialPort *UsblSerial;
@@ -125,6 +144,32 @@ private:
 
     // 发送解算后的坐标给AUV (带CRC校验，自动发送)
     void SendTargetPosToAUV(double lat, double lon);
+
+    // [新增] 通用定深定高发送函数
+    // type: "AD" or "AH", value: 数值字符串(如"1.5"), isEnable: true开启/false关闭
+    void SendAutoControlCmd(const QString &type, const QString &value, bool isEnable);
+
+    // [新增] 9. 预编程运动控制 (位于右侧面板下方)
+    QGroupBox *GroupBox_Program;
+    
+    // 步骤1
+    QLabel *Label_Step1;
+    QComboBox *Combo_Act1;
+    QComboBox *Combo_Dist1;
+    
+    // 步骤2
+    QLabel *Label_Step2;
+    QComboBox *Combo_Act2;
+    QComboBox *Combo_Dist2;
+    
+    // 步骤3
+    QLabel *Label_Step3;
+    QComboBox *Combo_Act3;
+    QComboBox *Combo_Dist3;
+    
+    QPushButton *Btn_SendProg; // 发送任务按钮
+
+    void RefreshDistCombo(QComboBox* actCombo, QComboBox* distCombo);
     
     // CRC16计算函数
     uint16_t calculateCRC16(const QByteArray &data);
@@ -161,8 +206,22 @@ private slots:
     void Slot_Btn_Rel2_Open_Clicked();
     void Slot_Btn_Rel2_Close_Clicked();
 
+    void Slot_Btn_ClearTrack_Clicked();
+
     // [新增] 发送目标点按钮槽函数
     void Slot_Btn_SendGoal_Clicked();
+
+    // [新增] 定深定高槽函数
+    void Slot_Btn_Depth_Open_Clicked();
+    void Slot_Btn_Depth_Close_Clicked();
+    void Slot_Btn_Alt_Open_Clicked();
+    void Slot_Btn_Alt_Close_Clicked();
+    
+    void Slot_Btn_SendProg_Clicked();
+    // [新增] 动作下拉框改变时的槽函数
+    void Slot_Act1_Changed(int index);
+    void Slot_Act2_Changed(int index);
+    void Slot_Act3_Changed(int index);
 };
 
 #endif // USBLCONTROLWINDOW_H
